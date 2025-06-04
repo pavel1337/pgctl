@@ -1,4 +1,4 @@
-module pgctl
+module github.com/pavel1337/pgctl
 
 go 1.24.3
 
