@@ -60,7 +60,7 @@ func TestPostgresController_Grant(t *testing.T) {
 	c := createTestController()
 	defer c.Close()
 
-	// Create test user and database
+	// Create user and database
 	err := c.CreateUser(testUser, testPassword)
 	assert.NoError(t, err)
 	defer c.DeleteUser(testUser)
@@ -69,28 +69,41 @@ func TestPostgresController_Grant(t *testing.T) {
 	assert.NoError(t, err)
 	defer c.DeleteDatabase(testDB)
 
-	// Test invalid grant
-	err = c.Grant("invalid_grant", testDB, testUser)
+	// Test invalid privilege
+	err = c.Grant("INVALID_GRANT", testDB, testUser)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), ErrInvalidGrant.Error())
+	assert.Contains(t, err.Error(), "invalid grant")
 
-	// Test valid grants
-	for g := range grants {
-		err := c.Grant(g, testDB, testUser)
-		if g == "CONNECT" {
-			assert.NoError(t, err)
-		} else {
-			// Some grants might fail if there are no tables/sequences
-			// So we just check for no error on the CONNECT privilege
+	// ✅ Test all valid grants on an empty database
+	t.Run("GrantAllOnEmptyDatabase", func(t *testing.T) {
+		for grant := range grants {
+			err := c.Grant(grant, testDB, testUser)
+			assert.NoError(t, err, "granting "+grant+" on empty DB should not fail")
 		}
+	})
+
+	// Create test table/function for completeness
+	_, err = c.db.Exec(`CREATE TABLE public.test_table (id SERIAL PRIMARY KEY, val TEXT);`)
+	assert.NoError(t, err)
+	_, err = c.db.Exec(`CREATE FUNCTION public.test_func() RETURNS INT AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;`)
+	assert.NoError(t, err)
+
+	// Re-run grant logic now that objects exist
+	for grant := range grants {
+		t.Run("Grant_"+grant+"_WithObjects", func(t *testing.T) {
+			err := c.Grant(grant, testDB, testUser)
+			assert.NoError(t, err, "granting "+grant+" with existing objects should not fail")
+		})
 	}
 
-	// Test CONNECT grant specifically
-	err = c.Grant("CONNECT", testDB, testUser)
-	assert.NoError(t, err)
+	// CONNECT test: try to connect using the user
+	t.Run("ConnectWithGrantedUser", func(t *testing.T) {
+		err := c.Grant("CONNECT", testDB, testUser)
+		assert.NoError(t, err)
 
-	err = openPostgres(testUser, testPassword, testDB)
-	assert.NoError(t, err)
+		err = openPostgres(testUser, testPassword, testDB)
+		assert.NoError(t, err)
+	})
 }
 
 // func TestPostgresController_GrantExists(t *testing.T) {

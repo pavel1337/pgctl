@@ -142,30 +142,43 @@ func (c *PostgresController) Grant(grantName, dbName, username string) error {
 	}
 
 	switch grantName {
-	case "CONNECT":
-		_, err := c.db.Exec(`GRANT CONNECT ON DATABASE "` + dbName + `" TO "` + username + `"`)
+	case "CONNECT", "TEMPORARY":
+		_, err := c.db.Exec(`GRANT ` + grantName + ` ON DATABASE "` + dbName + `" TO "` + username + `"`)
 		return err
-	case "USAGE", "CREATE":
-		_, err := c.db.Exec(`GRANT ` + grantName + ` ON SCHEMA public TO "` + username + `"`)
+
+	case "USAGE":
+		_, err := c.db.Exec(`GRANT USAGE ON SCHEMA public TO "` + username + `"`)
 		if err != nil {
-			return fmt.Errorf("error granting schema privileges: %w", err)
+			return fmt.Errorf("error granting schema USAGE: %w", err)
 		}
-		return nil
+		_, err = c.db.Exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO "` + username + `"`)
+		return err
+
+	case "CREATE":
+		_, err := c.db.Exec(`GRANT CREATE ON SCHEMA public TO "` + username + `"`)
+		if err != nil {
+			return fmt.Errorf("error granting schema CREATE: %w", err)
+		}
+		// Optional: add default privileges for created objects if needed
+
+	case "EXECUTE":
+		_, err := c.db.Exec(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO "` + username + `"`)
+		if err != nil {
+			return fmt.Errorf("error granting EXECUTE: %w", err)
+		}
+		_, err = c.db.Exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO "` + username + `"`)
+		return err
+
 	default:
-		// Grant table-level privileges
 		_, err := c.db.Exec(`GRANT ` + grantName + ` ON ALL TABLES IN SCHEMA public TO "` + username + `"`)
 		if err != nil {
 			return fmt.Errorf("error granting table privileges: %w", err)
 		}
-		_, err = c.db.Exec(`
-			ALTER DEFAULT PRIVILEGES IN SCHEMA public
-			GRANT ` + grantName + ` ON TABLES TO "` + username + `"
-		`)
-		if err != nil {
-			return fmt.Errorf("error setting default privileges: %w", err)
-		}
-		return nil
+		_, err = c.db.Exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ` + grantName + ` ON TABLES TO "` + username + `"`)
+		return err
 	}
+
+	return nil
 }
 
 func (c *PostgresController) Revoke(grantName, dbName, username string) error {
