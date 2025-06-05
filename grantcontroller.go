@@ -141,35 +141,31 @@ func (c *PostgresController) Grant(grantName, dbName, username string) error {
 		return fmt.Errorf("error validating grant: %w", err)
 	}
 
-	if grantName == "CONNECT" {
+	switch grantName {
+	case "CONNECT":
 		_, err := c.db.Exec(`GRANT CONNECT ON DATABASE "` + dbName + `" TO "` + username + `"`)
 		return err
-	}
-
-	// Grant schema access (needed for any table access)
-	if grantName == "USAGE" || grantName == "CREATE" || grantName == "ALL" {
-		_, err := c.db.Exec(`GRANT USAGE, CREATE ON SCHEMA public TO "` + username + `"`)
+	case "USAGE", "CREATE":
+		_, err := c.db.Exec(`GRANT ` + grantName + ` ON SCHEMA public TO "` + username + `"`)
 		if err != nil {
 			return fmt.Errorf("error granting schema privileges: %w", err)
 		}
+		return nil
+	default:
+		// Grant table-level privileges
+		_, err := c.db.Exec(`GRANT ` + grantName + ` ON ALL TABLES IN SCHEMA public TO "` + username + `"`)
+		if err != nil {
+			return fmt.Errorf("error granting table privileges: %w", err)
+		}
+		_, err = c.db.Exec(`
+			ALTER DEFAULT PRIVILEGES IN SCHEMA public
+			GRANT ` + grantName + ` ON TABLES TO "` + username + `"
+		`)
+		if err != nil {
+			return fmt.Errorf("error setting default privileges: %w", err)
+		}
+		return nil
 	}
-
-	// Grant privileges on existing tables
-	_, err := c.db.Exec(`GRANT ` + grantName + ` ON ALL TABLES IN SCHEMA public TO "` + username + `"`)
-	if err != nil {
-		return fmt.Errorf("error granting table privileges: %w", err)
-	}
-
-	// Set default privileges for future tables
-	_, err = c.db.Exec(`
-		ALTER DEFAULT PRIVILEGES IN SCHEMA public
-		GRANT ` + grantName + ` ON TABLES TO "` + username + `"
-	`)
-	if err != nil {
-		return fmt.Errorf("error setting default privileges: %w", err)
-	}
-
-	return nil
 }
 
 func (c *PostgresController) Revoke(grantName, dbName, username string) error {
