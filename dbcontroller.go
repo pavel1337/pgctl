@@ -38,12 +38,16 @@ type PostgresConn struct {
 	Host     string
 	Port     int
 	Database string
+	SSLMode  string
 }
 
 // connStr returns the connection string from the postgressConn struct
 func (pc PostgresConn) connStr() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		pc.Username, pc.Password, pc.Host, pc.Port, pc.Database)
+	if pc.SSLMode == "" {
+		pc.SSLMode = "disable"
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		pc.Username, pc.Password, pc.Host, pc.Port, pc.Database, pc.SSLMode)
 }
 
 type Option func(*PostgresController)
