@@ -87,21 +87,40 @@ func TestPostgresController_DeleteUser(t *testing.T) {
 	c := createTestController()
 	defer c.Close()
 
+	// Deleting a non-existent user should error
 	err := c.DeleteUser(testUser)
 	assert.Error(t, err)
 
+	// Create user
 	err = c.CreateUser(testUser, testPassword)
 	assert.NoError(t, err)
 
+	_, err = c.db.Exec(fmt.Sprintf(`GRANT CREATE ON SCHEMA public TO "%s"`, testUser))
+	assert.NoError(t, err)
+
+	// Connect as the new user and create an object (e.g., a table)
+	err = openPostgres(testUser, testPassword, "postgres") // use existing DB for object creation
+	assert.NoError(t, err)
+
+	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@localhost:55432/postgres?sslmode=disable", testUser, testPassword))
+	assert.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS test_owned_table (id INT);`)
+	assert.NoError(t, err)
+	db.Close()
+
+	// Now delete the user (should succeed because DROP OWNED is called)
 	err = c.DeleteUser(testUser)
 	assert.NoError(t, err)
 
+	// Verify the user is actually gone (can't connect)
 	err = openPostgres(testUser, testPassword, "")
 	assert.Error(t, err)
 
+	// Invalid username should error
 	err = c.DeleteUser("")
 	assert.Error(t, err)
 
+	// Attempting to delete base users (e.g., postgres) should fail
 	for _, name := range baseUsers {
 		err = c.DeleteUser(name)
 		assert.Error(t, err)

@@ -137,31 +137,33 @@ func (c *PostgresController) UpdateUserPassword(username, password string) error
 }
 
 func (c *PostgresController) DeleteUser(username string) error {
-	err := validateUsername(username)
-	if err != nil {
+	if err := validateUsername(username); err != nil {
 		return err
 	}
 
-	// First, terminate all connections for the user
-	_, err = c.db.Exec(fmt.Sprintf(`
+	_, err := c.db.Exec(fmt.Sprintf(`
 		SELECT pg_terminate_backend(pid)
 		FROM pg_stat_activity
-		WHERE usename = '%s'
-	`, username))
+		WHERE usename = '%s'`, username))
 	if err != nil {
 		return fmt.Errorf("error terminating user connections: %w", err)
 	}
 
-	_, err = c.db.Exec(fmt.Sprintf("DROP ROLE \"%s\"", username))
+	_, err = c.db.Exec(fmt.Sprintf(`DROP OWNED BY "%s"`, username))
+	if err != nil {
+		return fmt.Errorf("error dropping owned objects: %w", err)
+	}
+
+	_, err = c.db.Exec(fmt.Sprintf(`DROP ROLE "%s"`, username))
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
-			return ErrUserDoesNotExist // define this as needed
+			return ErrUserDoesNotExist
 		}
 		return fmt.Errorf("error deleting user: %w", err)
 	}
+
 	return nil
 }
-
 func (c *PostgresController) ListUsers() ([]string, error) {
 	rows, err := c.db.Query(`
 		SELECT rolname
