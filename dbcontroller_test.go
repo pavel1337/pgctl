@@ -207,3 +207,67 @@ func randomString(n int) string {
 	}
 	return string(b)
 }
+
+func TestPostgresController_TransferDatabaseOwnership(t *testing.T) {
+	dbName := testDB()
+	userName := testUser()
+	password := testPassword()
+
+	c := createTestController()
+	defer c.Close()
+
+	// Create DB
+	err := c.CreateDatabase(dbName)
+	assert.NoError(t, err)
+	defer c.DeleteDatabase(dbName)
+
+	// Create user
+	err = c.CreateUserWithMaxConn(userName, password, 5)
+	assert.NoError(t, err)
+	defer c.DeleteUser(userName)
+
+	// Transfer ownership
+	err = c.TransferDatabaseOwnership(dbName, userName)
+	assert.NoError(t, err)
+
+	// Verify via query
+	var owner string
+	err = c.db.QueryRow(`SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1`, dbName).Scan(&owner)
+	assert.NoError(t, err)
+	assert.Equal(t, userName, owner)
+}
+
+func TestPostgresController_TransferPublicSchemaOwnership(t *testing.T) {
+	dbName := testDB()
+	userName := testUser()
+	password := testPassword()
+
+	c := createTestController()
+	defer c.Close()
+
+	// Create DB
+	err := c.CreateDatabase(dbName)
+	assert.NoError(t, err)
+	defer c.DeleteDatabase(dbName)
+
+	// Create user
+	err = c.CreateUserWithMaxConn(userName, password, 5)
+	assert.NoError(t, err)
+	defer c.DeleteUser(userName)
+
+	// Transfer schema ownership
+	err = c.TransferPublicSchemaOwnership(dbName, userName)
+	assert.NoError(t, err)
+
+	// Check ownership in connected DB
+	perDbConn := pc
+	perDbConn.Database = dbName
+	db, err := sql.Open("postgres", perDbConn.connStr())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	var schemaOwner string
+	err = db.QueryRow(`SELECT schema_owner FROM information_schema.schemata WHERE schema_name = 'public'`).Scan(&schemaOwner)
+	assert.NoError(t, err)
+	assert.Equal(t, userName, schemaOwner)
+}

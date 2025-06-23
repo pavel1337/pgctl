@@ -16,6 +16,8 @@ type DBController interface {
 	DatabaseExists(dbName string) (bool, error)
 	Size(dbName string) (int, error)
 	Tables(dbName string) ([]string, error)
+	TransferDatabaseOwnership(dbName, newOwner string) error
+	TransferPublicSchemaOwnership(dbName, newOwner string) error
 }
 
 var _ DBController = &PostgresController{}
@@ -219,6 +221,25 @@ func (c *PostgresController) Tables(dbName string) ([]string, error) {
 
 	return tables, nil
 }
+
+func (c *PostgresController) TransferDatabaseOwnership(dbName, newOwner string) error {
+	_, err := c.db.Exec(`ALTER DATABASE "` + dbName + `" OWNER TO "` + newOwner + `"`)
+	return err
+}
+
+func (c *PostgresController) TransferPublicSchemaOwnership(dbName, newOwner string) error {
+	perDbConn := c.pc
+	perDbConn.Database = dbName
+	db, err := sql.Open("postgres", perDbConn.connStr())
+	if err != nil {
+		return fmt.Errorf("failed to connect to %s: %w", dbName, err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`ALTER SCHEMA public OWNER TO "` + newOwner + `"`)
+	return err
+}
+
 func filterBaseDatabases(dbs []string) []string {
 	var filtered []string
 	for _, db := range dbs {
