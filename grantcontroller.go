@@ -13,6 +13,7 @@ type GrantController interface {
 	GrantAll(dbName, username string) error
 	RevokeAll(dbName, username string) error
 	Revoke(grantName, dbName, username string) error
+	RevokePublicDatabaseAccess(dbName string) error
 }
 
 var _ GrantController = &PostgresController{}
@@ -224,50 +225,20 @@ func (c *PostgresController) Revoke(grantName, dbName, username string) error {
 	return nil
 }
 
-// // GrantExists returns true if the given privilege exists for the given database and user
-// func (c *PostgresController) GrantExists(grantName, dbName, username string) (bool, error) {
-// 	err := validateDBName(dbName)
-// 	if err != nil {
-// 		return false, fmt.Errorf("error validating database name: %w", err)
-// 	}
+func (c *PostgresController) RevokePublicDatabaseAccess(dbName string) error {
+	if err := validateDBName(dbName); err != nil {
+		return fmt.Errorf("error validating database name: %w", err)
+	}
 
-// 	err = validateUsername(username)
-// 	if err != nil {
-// 		return false, fmt.Errorf("error validating username: %w", err)
-// 	}
+	_, err := c.db.Exec(
+		`REVOKE CONNECT, TEMPORARY ON DATABASE "` + dbName + `" FROM PUBLIC`,
+	)
+	if err != nil {
+		return fmt.Errorf("error revoking PUBLIC database access: %w", err)
+	}
 
-// 	grantName = strings.ToUpper(grantName)
-// 	err = validateGrant(grantName)
-// 	if err != nil {
-// 		return false, fmt.Errorf("error validating grant: %w", err)
-// 	}
-
-// 	if grantName == "CONNECT" {
-// 		var hasPrivilege bool
-// 		err = c.db.QueryRow(`
-// 			SELECT has_database_privilege($1, $2, 'CONNECT')
-// 		`, username, dbName).Scan(&hasPrivilege)
-// 		if err != nil {
-// 			return false, fmt.Errorf("error checking CONNECT privilege: %w", err)
-// 		}
-// 		return hasPrivilege, nil
-// 	}
-
-// 	// Check privileges on tables in the public schema
-// 	var count int
-// 	err = c.db.QueryRow(`
-// 		SELECT COUNT(*)
-// 		FROM information_schema.role_table_grants
-// 		WHERE grantee = $1
-// 		AND table_catalog = $2
-// 		AND privilege_type = $3
-// 	`, username, dbName, grantName).Scan(&count)
-// 	if err != nil {
-// 		return false, fmt.Errorf("error checking if grant exists: %w", err)
-// 	}
-
-// 	return count > 0, nil
-// }
+	return nil
+}
 
 // validateGrant checks if the given privilege is valid
 func validateGrant(grantName string) error {

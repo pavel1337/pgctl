@@ -174,3 +174,41 @@ func TestPostgresController_Revoke(t *testing.T) {
 	err = c.Revoke("CONNECT", testDB, testUser)
 	assert.NoError(t, err)
 }
+
+func TestPostgresController_RevokePublicDatabaseAccess(t *testing.T) {
+	testDB := testDB()
+	testUser := testUser()
+	testPassword := testPassword()
+
+	c := createTestController()
+	defer c.Close()
+
+	// Create user
+	err := c.CreateUser(testUser, testPassword)
+	assert.NoError(t, err)
+	defer c.DeleteUser(testUser)
+
+	// Create database
+	err = c.CreateDatabase(testDB)
+	assert.NoError(t, err)
+	defer c.DeleteDatabase(testDB)
+
+	// 1. By default, user can connect via PUBLIC
+	err = openPostgres(testUser, testPassword, testDB)
+	assert.NoError(t, err, "user should be able to connect via PUBLIC by default")
+
+	// 2. Revoke PUBLIC access
+	err = c.RevokePublicDatabaseAccess(testDB)
+	assert.NoError(t, err)
+
+	// 3. User can no longer connect
+	err = openPostgres(testUser, testPassword, testDB)
+	assert.Error(t, err, "user should NOT be able to connect after PUBLIC revoke")
+
+	// 4. Explicit grant restores access
+	err = c.Grant("CONNECT", testDB, testUser)
+	assert.NoError(t, err)
+
+	err = openPostgres(testUser, testPassword, testDB)
+	assert.NoError(t, err, "user should be able to connect after explicit CONNECT grant")
+}
